@@ -1,0 +1,688 @@
+---
+title: 'Case Study 2: Employee Attrition Rate Analysis'
+author: "Hao Wang"
+date: "December 2019"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---  
+
+# Introduction   
+DDSAnalytics is an analytics company that specializes in talent management solutions for Fortune 100 companies. Talent management is defined as the iterative process of developing and retaining employees. It may include workforce planning, employee training programs, identifying high-potential employees and reducing/preventing voluntary employee turnover (attrition). To gain a competitive edge over its competition, DDSAnalytics is planning to leverage data science for talent management. The executive leadership has identified predicting employee turnover as its first application of data science for talent management. Before the business green lights the project, they have tasked the data science team to conduct an analysis of existing employee data.    
+**YouTube**: https://youtu.be/akFRgl3ZXJs    
+**Shiny**: https://data-science-hw.shinyapps.io/EmployeeShiny/     
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Visualization
+library(tidyverse)
+library(plotly)
+library(plyr)
+library(dplyr)
+library(maps)
+library(inspectdf)
+library(VIM)
+library(ggthemes)
+library(GGally)
+library(prettydoc)
+library(skimr)
+library(corrplot)
+
+# data wrangling 
+library(stringr)
+library(tm)
+library(knitr)
+library(sqldf)
+library(dataMaid)
+library(ROSE) # ROSE: Randomly Over Sampling Examples
+
+# classification and modeling
+library(class)
+library(e1071)
+library(caret)
+library(naivebayes)
+library(psych)
+library(randomForest)
+library(Metrics)
+```
+
+```{r readcsv, include=FALSE}
+setwd("C:/Edu/GitHub_DDS/Unit14/CaseStudy2DDS")
+EmployeeDF <- read.csv("CaseStudy2-data.csv", header = TRUE)
+CompSetNoAttrition <- read.csv("CaseStudy2CompSet No Attrition.csv", header = TRUE)
+CompSetNoSalary <- read.csv("CaseStudy2CompSet No Salary.csv", header = TRUE)
+```
+
+## Data set overview  
+There are 870 obs. of 36 variables. 
+Among the 36 variables, 9 are categorical factors, 27 are numeric variables.     
+No missing values in data set.     
+```{r, echo=FALSE}
+str(EmployeeDF)
+# Quickly plot the histogram of all variables.
+# skim(EmployeeDF)
+```
+
+```{r, include=FALSE}
+## Step 1. Eliminating variables, get rid of zero variance variables (ones that only have one value)
+# sd=0 for variables that have only one single value for all obs.
+lapply(EmployeeDF, sd) # Those variables with sd=0 means only one value for all obs.
+EmployeeDF$Age <- as.numeric(EmployeeDF$Age)
+EmployeeDF_NoZeroSD <- EmployeeDF %>% select(-EmployeeCount, -Over18, -StandardHours)
+str(EmployeeDF_NoZeroSD)
+# 870 obs. of 33 variables.
+# Check and make sure categorical variables are stored as factors.
+```
+## Correlation Check   
+Variables that heavily correlated with one another won’t be eliminated following the project advice, to keep the information which may be correlated with the response individually.      
+```{r, echo= FALSE}
+## Use corrplot() from package corrplot.
+EmployeeDF_NoZeroSD %>% 
+  keep(is.numeric) %>%
+  tidyr::drop_na() %>%
+  cor %>%
+  corrplot(
+    addCoef.col = "grey", number.digits = 2, number.cex = 0.7, method = "square",
+    order = "hclust", title = "Variable Corr Heatmap", tl.srt = 45, tl.cex = 0.8)
+```
+
+```{r, include=FALSE}
+# EmployeeDF_A <- EmployeeDF
+# ## Add new column replacing Attrition from Yes/No to 1/0, and do corrplot with this change
+# EmployeeDF_A$numAtt = ifelse(EmployeeDF_A$Attrition =="Yes", 1, 0)
+```
+
+
+## Data visualization  
+```{r, include=FALSE}
+### Boxplots to check numerical variables effect on attrition rate.  
+# automated EDA !!!!!!!
+# # Step 1, save target variable name
+# target <- "Attrition"
+# # Step 2, save explanator variable names
+# numvars <- EmployeeDF %>% keep(is.numeric) %>% colnames
+# # Step 3, create function
+# boxplotFunction <- function(df,explan,resp) {
+#    df %>% ggplot(aes_string(y=explan, x=resp, color=resp)) + geom_boxplot()
+# }
+# 
+# boxplotFunction(EmployeeDF, "Age", "Attrition")
+# # Step 4, create plot list
+# plotlist <- lapply(numvars, function(x) boxplotFunction(EmployeeDF, x, "Attrition"))
+# # Step 5, Plot boxplots with plot_grid()
+# library(cowplot)
+# plot_grid(plotlist = plotlist, nrow = 3, ncol = 3)
+
+### 3.1 Boxplots to check numerical variables effect on attrition rate.  
+#png()
+EmployeeDF %>% ggplot(aes(y=Age, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=DailyRate, x=Attrition, color=Attrition)) + geom_boxplot()
+#dev.off()
+EmployeeDF %>% ggplot(aes(y=DistanceFromHome, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=Education, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=EnvironmentSatisfaction, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=HourlyRate, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=JobInvolvement, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=JobLevel, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=JobSatisfaction, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=MonthlyIncome, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=MonthlyRate, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=NumCompaniesWorked, x=Attrition, color=Attrition)) +
+  geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=PercentSalaryHike, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=PerformanceRating, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=RelationshipSatisfaction, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=StockOptionLevel, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=TotalWorkingYears, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=TrainingTimesLastYear, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=WorkLifeBalance, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=YearsAtCompany, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=YearsInCurrentRole, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=YearsSinceLastPromotion, x=Attrition, color=Attrition)) + geom_boxplot()
+EmployeeDF %>% ggplot(aes(y=YearsWithCurrManager, x=Attrition, color=Attrition)) + geom_boxplot()
+
+# Boxplots indicate below variables have **significant** effect on attrition.  
+# 1. Age: Employees leaving company have **significantly**  younger mean of ages.  
+# 2. DailyRate: Employees leaving company have lower mean of daily rate.  
+# 3. DistanceFromHome: Employees leaving company have longer mean of distance from home.  
+# 4. JobLevel: Employees leaving company are mainly from **low levels** (1,2)  
+# 5. JobSatisfaction: Employees leaving company have lower mean of job satisfaction.  
+# 6. MonthlyIncome: Employees leaving company have **significantly** lower mean of monthly income.  
+# 7. MonthlyRate: Employees leaving company have lower mean of monthly rate.  
+# 8. TotalWorkingYears: Employees leaving company have  **significantly**  shorter years of total working years, this variable may have correlation to age.  
+# 9. YearAtCompany: Employees leaving company have  **significantly**  shorter years at company.
+# 10. YearInCurrentRole: Employees leaving company have  **significantly**  shorter years in current role.  
+# 11. YearsWithCurrentManager: Employees leaving company have  **significantly**  shorter years with current manager.  
+# 
+# Boxplots of below variables have **no significant** effect on attrition.  
+# 1. Education: Mean educations are the same for employees both leaving company or staying company, this may need some other plots to check.  
+# 2. EnvironmentSatisfaction: Mean EnvironmentSatisfactions are the same for employees both leaving company or staying company.  
+# 3. HourlyRate: Mean of HourlyRate of employees leaving company is even higher than those not leaving, this is weird.  
+# 4. JobInvolvement: Exactly the same.  
+# 5. NumCompaniesWorked: Not significantly different.  
+# 6. PercentSalaryHike: Exactly the same.  
+# 7. PerformanceRating: Exactly the same.  
+# 8. RelationshipSatisfaction: Almost the same.  
+# 9. StockOptionLevel: Not significant in boxplots, while barchart indicates that this variable is **significant**.
+# 10. TrainingTimes: Not significant.  
+# 11. WorkLifeBalance: Not significant.  
+# 12. YearsSinceLastPromotion: Not significant.  
+
+```
+
+### Density plots to check numerical variables effect on attrition rate.  
+Density plots indicate the attrition rate overlapping between ‘Yes’ or ‘No’   
+```{r, echo=FALSE}
+EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+                                       (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+EmployeeDF1 %>% ggplot() + geom_density(aes(x=positive, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: Positive vs. Attrition")
+#PercentSalaryHike*(StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+EmployeeDF %>% ggplot() + geom_density(aes(x=Age, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: Age vs. Attrition")
+# EmployeeDF %>% ggplot() + geom_density(aes(x=DailyRate, fill=Attrition), alpha=0.5)
+EmployeeDF %>% ggplot() + geom_density(aes(x=DistanceFromHome, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: DistanceFromHome vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=Education, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: Education vs. Attrition")
+# EmployeeDF %>% ggplot() + geom_density(aes(x=EnvironmentSatisfaction, fill=Attrition), alpha=0.5)
+# EmployeeDF %>% ggplot() + geom_density(aes(x=HourlyRate, fill=Attrition), alpha=0.5)
+EmployeeDF %>% ggplot() + geom_density(aes(x=JobInvolvement, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: JobInvolvement vs. Attrition")
+# EmployeeDF %>% ggplot() + geom_density(aes(x=JobLevel, fill=Attrition), alpha=0.5)
+# EmployeeDF %>% ggplot() + geom_density(aes(x=JobSatisfaction, fill=Attrition), alpha=0.5)
+# EmployeeDF %>% ggplot() + geom_density(aes(x=MonthlyIncome, fill=Attrition), alpha=0.5)
+# EmployeeDF %>% ggplot() + geom_density(aes(x=MonthlyRate, fill=Attrition), alpha=0.5)
+EmployeeDF %>% ggplot() + geom_density(aes(x=NumCompaniesWorked, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: NumCompaniesWorked vs. Attrition")
+# EmployeeDF %>% ggplot() + geom_density(aes(x=PercentSalaryHike, fill=Attrition), alpha=0.5)
+EmployeeDF %>% ggplot() + geom_density(aes(x=PerformanceRating, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: PerformanceRating vs. Attrition")
+# EmployeeDF %>% ggplot() + geom_density(aes(x=RelationshipSatisfaction, fill=Attrition), alpha=0.5)
+# EmployeeDF %>% ggplot() + geom_density(aes(x=StockOptionLevel, fill=Attrition), alpha=0.5)
+EmployeeDF %>% ggplot() + geom_density(aes(x=TotalWorkingYears, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: TotalWorkingYears vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=TrainingTimesLastYear, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: TrainingTimesLastYear vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=WorkLifeBalance, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: WorkLifeBalance vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=YearsAtCompany, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: YearsAtCompany vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=YearsInCurrentRole, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: YearsInCurrentRole vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=YearsSinceLastPromotion, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: YearsSinceLastPromotion vs. Attrition")
+EmployeeDF %>% ggplot() + geom_density(aes(x=YearsWithCurrManager, fill=Attrition), alpha=0.5) + ggtitle("Density Plot: YearsWithCurrManager vs. Attrition")
+```
+
+### Bar charts to check numerical variables effect on attrition rate.  
+Bar charts indicate the attrition rate ‘Yes’ has a relatively random distribution against these variables   
+```{r, echo=FALSE}
+EmployeeDF %>% ggplot(aes(x=Age, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: Age vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=Age, fill=Attrition)) + geom_bar() + facet_grid(MaritalStatus~JobLevel) # *
+# EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+#                                        (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+EmployeeDF1 %>% ggplot(aes(x=Age, y=positive, fill=Attrition)) + geom_bar(stat = "identity", position = "fill") + ggtitle("Bar Chart: Positive vs. Age vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=DailyRate, fill=Attrition)) + geom_bar()
+# EmployeeDF %>% filter(JobLevel==1 & StockOptionLevel == 0) %>% group_by(Attrition) %>% dplyr::summarise(count=n())
+# EmployeeDF %>% filter(JobLevel==1 & StockOptionLevel == 0 & ((as.numeric(Age)) <= 19)) %>% group_by(Attrition) %>% dplyr::summarise(count=n())
+EmployeeDF %>% ggplot(aes(x=DistanceFromHome, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: DistanceFromHome vs. Attrition")
+EmployeeDF %>% ggplot(aes(x=Education, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: Education vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=EnvironmentSatisfaction, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=JobInvolvement, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: JobInvolvement vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=JobLevel, fill=Attrition)) + geom_bar(position = "fill")
+# EmployeeDF %>% ggplot(aes(x=JobLevel, fill=Attrition)) + geom_bar() + facet_wrap(~StockOptionLevel)
+# EmployeeDF %>% ggplot(aes(x=JobSatisfaction, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=NumCompaniesWorked, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: NumCompaniesWorked vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=PercentSalaryHike, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=PerformanceRating, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: PerformanceRating vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=RelationshipSatisfaction, fill=Attrition)) + geom_bar(position = "fill")
+# EmployeeDF %>% ggplot(aes(x=StockOptionLevel, fill=Attrition)) + geom_bar(position = "fill")
+# EmployeeDF %>% ggplot(aes(x=StockOptionLevel, fill=Attrition)) + geom_bar() + facet_wrap(~JobLevel)
+EmployeeDF %>% ggplot(aes(x=TotalWorkingYears, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: TotalWorkingYears vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=TotalWorkingYears, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=TrainingTimesLastYear, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: TrainingTimesLastYear vs. Attrition")
+EmployeeDF %>% ggplot(aes(x=WorkLifeBalance, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: WorkLifeBalance vs. Attrition")
+EmployeeDF %>% ggplot(aes(x=YearsAtCompany, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: YearsAtCompany vs. Attrition")
+# EmployeeDF %>% ggplot(aes(x=YearsAtCompany, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=YearsInCurrentRole, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: YearsInCurrentRole vs. Attrition")
+EmployeeDF %>% ggplot(aes(x=YearsSinceLastPromotion, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: YearsSinceLastPromotion vs. Attrition")
+EmployeeDF %>% ggplot(aes(x=YearsWithCurrManager, fill=Attrition)) + geom_bar(position = "fill") + ggtitle("Bar Chart: YearsWithCurrentManager vs. Attrition")
+# EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+#                                        (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+# EmployeeDF1 %>% ggplot(aes(x=positive, fill=Attrition)) + geom_bar(position = "fill")
+
+# Bar charts indicate below variables have **significant** effect on attrition.  
+# 1. DistanceFromHome: **significant** for 13mi, 14mi, 22mi, 24mi, seems there is a trend the longer distance from home, the higher attrition rate, may need further test.
+# 2. JobInvolvement: **significant** the lower JobInvolvement raking, the higher attrition rate!
+# 3. StockOptionLevel: More employees chose to quit from company when stock option level is given 0 (No stock option?). **significant**    
+# 4. TotalWorkingYears: Employees with total working years less than 3 years have high attrition rate!  **significant**    
+# 5. WorkLifeBalance: **significant** WorkLifeBalance=1 has doubled attrition rate than =2, =3, =4, why?
+# 6. YearAtCompany: **significant** may have correlation with TotalWorkingYears.
+# 7. YearAtCurrentRole: Employees with too short time or too long time working as one role have high risk to leave company.
+# 8. YearSinceLastPromotion: Employees without promotion for too long may leave company, not that significant from plot, need further test.
+# 9. YearWithCurrentManager: **significant** The first year with a new manager is important, more employees select leaving company within the first year with new manager! Possible reason is new manager's working style not fit the employees.
+```
+
+```{r, include=FALSE}
+### 3.4 Bar charts to check categorical variables effect on attrition rate.  
+EmployeeDF %>% ggplot(aes(x=BusinessTravel, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=BusinessTravel, fill=Attrition)) + geom_bar() + facet_wrap(~JobLevel)
+EmployeeDF %>% ggplot(aes(x=Department, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=EducationField, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=Gender, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=JobRole, fill=Attrition)) + geom_bar()+coord_flip()
+EmployeeDF %>% ggplot(aes(x=MaritalStatus, fill=Attrition)) + geom_bar()
+EmployeeDF %>% ggplot(aes(x=OverTime, fill=Attrition)) + geom_bar()
+
+EmployeeDF %>% ggplot(aes(x=BusinessTravel, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=Department, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=EducationField, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=JobRole, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=MaritalStatus, fill=Attrition)) + geom_bar(position = "fill")
+EmployeeDF %>% ggplot(aes(x=OverTime, fill=Attrition)) + geom_bar(position = "fill")
+```
+
+```{r, include=FALSE}
+### Scatter plots to check categorical variables effect on attrition rate.  
+EmployeeDF %>% ggplot(aes(x=Age, y=HourlyRate, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 2. Attrition: HourlyRate vs. Age")
+EmployeeDF %>% ggplot(aes(x=Age, y=DailyRate, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 3. Attrition: DailyRate vs. Age")
+EmployeeDF %>% ggplot(aes(x=Age, y=MonthlyRate, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: MonthlyRate vs. Age")
+EmployeeDF %>% ggplot(aes(x=Age, y=MonthlyIncome, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: MonthlyRate vs. Age")
+EmployeeDF %>% filter(Attrition=="No") %>%  ggplot(aes(x=Age, y=MonthlyIncome, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: MonthlyRate vs. Age")
+EmployeeDF %>% filter(Attrition=="No") %>%  ggplot(aes(x=Age, y=log(MonthlyIncome), color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: logMonthlyRate vs. Age")
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=Age, y=MonthlyIncome, color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: MonthlyRate vs. Age")
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=Age, y=log(MonthlyIncome), color=Attrition)) + geom_point()+ geom_smooth(method = lm) + ggtitle("Fig 4. Attrition: logMonthlyRate vs. Age")
+```
+
+```{r, include=FALSE}
+### Scatter plots to check interactions between predictors
+## Scatter plot MonthlyIncome vs. Subjective satisfaction 
+### There is no clear correlation between income and satisfaction
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=EnvironmentSatisfaction, y=MonthlyIncome, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=JobSatisfaction, y=MonthlyIncome, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=RelationshipSatisfaction, y=MonthlyIncome, color=Attrition))+geom_point(position = "jitter") 
+
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=EnvironmentSatisfaction, y=DailyRate, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=JobSatisfaction, y=DailyRate, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=RelationshipSatisfaction, y=DailyRate, color=Attrition))+geom_point(position = "jitter") 
+
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=EnvironmentSatisfaction, y=HourlyRate, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=JobSatisfaction, y=HourlyRate, color=Attrition))+geom_point(position = "jitter") 
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=RelationshipSatisfaction, y=HourlyRate, color=Attrition))+geom_point(position = "jitter") 
+
+## Scatter plot Income vs. DistanceFromHome
+EmployeeDF %>% filter(Attrition=="Yes") %>%  ggplot(aes(x=DistanceFromHome, y=MonthlyIncome, color=Attrition))+
+  geom_point(position = "jitter") + facet_grid(JobSatisfaction~PerformanceRating)
+## Performance=3 vs 4: 738 (117 turnover) vs 132 (23 turnover)
+EmployeeDF %>% group_by(PerformanceRating) %>% dplyr::summarise(count=n())
+EmployeeDF %>% filter(Attrition=="Yes") %>%  group_by(PerformanceRating) %>% dplyr::summarise(count=n())
+## Scatter plot EmployeeNumber vs. YearsAtCompany
+EmployeeDF %>%  ggplot(aes(x=YearsAtCompany, y=EmployeeNumber, color=Attrition))+
+  geom_point(position = "jitter") + facet_wrap(~Attrition)
+```
+
+```{r, include=FALSE}
+## Step 4. Creat new variables meaningful to attrition rate!  
+# Scenario 1: Role change impact!
+## There are 5 variables related to years: TotalWorkingYears, YearsAtCompany, YearsInCurrentRole, YearsSinceLastPromotion, YearsWithCurrManager
+## We know role change matters to employee, especially whether his/her original manager change role together with the employee.
+# If the original manager change role together with employee, that means this role change is most likely a whole group function change, employee may accept this role change easier.
+# If the original manager did not change role together with employee, that means the employee might be kicked off from his/her original team, employee might be frustrated and decided to leave company.
+# We need check these variables and find whether original manager changed the role together with employee.
+EmployeeDF_Role <- EmployeeDF
+EmployeeDF_Role$ManagerAlsoChangeRole <- ifelse(EmployeeDF_Role$YearsInCurrentRole <= EmployeeDF_Role$YearsWithCurrManager, 1, 0)
+# ManagerAlsoChangeRole: 1 = Changed, 0 = Not changed.
+EmployeeDF_Role %>% ggplot(aes(x=ManagerAlsoChangeRole, fill=Attrition)) + geom_bar(position = "fill")
+ggplotly()
+# Observations: If manager changed role together with employee, the attrition rate would be 17.8%, while if not, the attrition rate would be 11.3%, this is opposite with previous analysis.
+```
+
+## KNN model1 with over-sampling data, two predictors: Age, Positive
+```{r, echo=FALSE}
+set.seed(1234)
+splitPerc = .75
+iterations = 50
+numks = 30
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+masterSen = matrix(nrow = iterations, ncol = numks)
+masterSpe = matrix(nrow = iterations, ncol = numks)
+
+masterSensitivity = matrix(nrow = 1, ncol = 1)
+masterSpecificity = matrix(nrow = 1, ncol = 1)
+EmployeeDF$LogMonthlyIncome <- log(EmployeeDF$MonthlyIncome)
+EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+                                        (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+  
+#significantID <- c(2,5,7,16,18,20,21,30,33,34,36,37)
+#significantID <- c(2,5,7,8,12,14,15,16,18,20,21,22,25,26,27,29,30,31,32,33,34,35,36,37)
+significantID <- c(2,38)
+
+for(c in 1:(length(significantID)-1))
+{
+  x <- significantID[c]
+  for(d in (c+1):length(significantID))
+  {
+    y <- significantID[d]
+    for(j in 1:iterations)
+      {
+      accs = data.frame(accuracy = numeric(30), k = numeric(30))
+      trainIndices = sample(1:dim(EmployeeDF1)[1],round(splitPerc * dim(EmployeeDF1)[1]))
+      train = EmployeeDF1[trainIndices,]
+      test = EmployeeDF1[-trainIndices,]
+      over <- ovun.sample(Attrition~., data = train, method = "over", N= 1374)$data
+      
+      for(i in 1:numks)
+        {
+        classifications = knn(over[,c(x,y)],test[,c(x,y)],over$Attrition, prob = TRUE, k = i)
+        #table(classifications,test$Attrition)
+        CM1 = confusionMatrix(table(classifications,test$Attrition))
+        masterAcc[j,i] = CM1$overall[1] # Accuracy
+        masterSen[j,i] = CM1$byClass[1] # Sensitivity
+        masterSpe[j,i] = CM1$byClass[2] # Specificity
+      }
+    }
+    MeanAcc = colMeans(masterAcc)
+    maxMeanAcc = max(MeanAcc) # k=?
+    
+    MeanSen = colMeans(masterSen)
+    maxMeanSen = max(MeanSen)        
+    
+    MeanSpe = colMeans(masterSpe)
+    maxMeanSpe = max(MeanSpe)
+    
+    masterSensitivity[(d-1),c] = maxMeanSen # Sensitivity
+    masterSpecificity[(d-1),c] = maxMeanSpe # Specificity
+    
+    # classifications1 = knn(train[,c(x,y)],test[,c(x,y)],train$Attrition, prob = TRUE, k = 5)
+    # #table(classifications5,test$Attrition)
+    # CM1 = confusionMatrix(table(classifications1,test$Attrition))
+    # CM1
+  }
+}
+paste0("KNN Model Max Mean of Sensitivity: ")
+maxMeanSen
+paste0("KNN Model Max Mean of Specificity: ")
+maxMeanSpe
+CM1    
+    
+plot(seq(1,numks,1),MeanAcc, type = "l", xlab = "Number of K", ylab="Mean of Accuracy", main = "Accuracy vs K (2 Predictors: Age, Positive)")
+plot(seq(1,numks,1),MeanSen, type = "l", xlab = "Number of K", ylab="Mean of Sensitivity", main = "Sensitivity vs K (2 Predictors: Age, Positive)")
+plot(seq(1,numks,1),MeanSpe, type = "l", xlab = "Number of K", ylab="Mean of Secificity", main = "Specificity vs K (2 Predictors: Age, Positive)")
+```
+
+## KNN model2 with over-sampling data, two predictors: Positive, TotalWorkingYears
+```{r, echo=FALSE}
+set.seed(1234)
+splitPerc = .75
+iterations = 50
+numks = 30
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+masterSen = matrix(nrow = iterations, ncol = numks)
+masterSpe = matrix(nrow = iterations, ncol = numks)
+
+EmployeeDF$LogMonthlyIncome <- log(EmployeeDF$MonthlyIncome)
+EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+                                        (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+
+for(j in 1:iterations)
+  {
+  accs = data.frame(accuracy = numeric(30), k = numeric(30))
+  trainIndices = sample(1:dim(EmployeeDF1)[1],round(splitPerc * dim(EmployeeDF1)[1]))
+  train = EmployeeDF1[trainIndices,]
+  test = EmployeeDF1[-trainIndices,]
+  over <- ovun.sample(Attrition~., data = train, method = "over", N= 1374)$data
+  for(i in 1:numks)
+    {
+    classifications = knn(over[,c(38,30)],test[,c(38,30)],over$Attrition, prob = TRUE, k = i)
+    #table(classifications,test$Attrition)
+    CM2 = confusionMatrix(table(classifications,test$Attrition))
+    masterAcc[j,i] = CM2$overall[1] # Accuracy
+    masterSen[j,i] = CM2$byClass[1] # Sensitivity
+    masterSpe[j,i] = CM2$byClass[2] # Specificity
+  }
+  }
+MeanAcc = colMeans(masterAcc)
+maxMeanAcc = max(MeanAcc) # k=?
+
+MeanSen = colMeans(masterSen)
+maxMeanSen = max(MeanSen)
+
+MeanSpe = colMeans(masterSpe)
+maxMeanSpe = max(MeanSpe)
+
+paste0("KNN Model Max Mean of Sensitivity: ")
+maxMeanSen
+paste0("KNN Model Max Mean of Specificity: ")
+maxMeanSpe
+CM2   
+
+plot(seq(1,numks,1),MeanAcc, type = "l", xlab = "Number of K", ylab="Mean of Accuracy", main = "Accuracy vs K (2 Predictors: Positive, TotalWorkingYears)")
+plot(seq(1,numks,1),MeanSen, type = "l", xlab = "Number of K", ylab="Mean of Sensitivity", main = "Sensitivity vs K (2 Predictors: Positive, TotalWorkingYears)")
+plot(seq(1,numks,1),MeanSpe, type = "l", xlab = "Number of K", ylab="Mean of Secificity", main = "Specificity vs K (2 Predictors: Positive, TotalWorkingYears)")
+    
+# classifications1 = knn(train[,c(x,y)],test[,c(x,y)],train$Attrition, prob = TRUE, k = 5)
+# #table(classifications5,test$Attrition)
+# CM1 = confusionMatrix(table(classifications1,test$Attrition))
+# CM1
+```
+
+## KNN Model Summary   
+1. Only numeric variables can be used as predictors in KNN model.   
+2. KNN model can provide high sensitivity or high specificity separately, with different K   
+3. Changing seed number or split percentage would throw impact on sensitivity / specificity as well   
+4. With specific seed number and split percentage, KNN model can meet project requirements of 60%+ on both sensitivity and specificity on test set. However the same model can’t achieve that accurate prediction results if we change to use a new test set.   
+5. A more robust model need to be created for better prediction.   
+
+```{r include=FALSE}
+## Build Random Forest model with all predictors   
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.factor(EmployeeDF$Age)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+model8 <- randomForest(x=train[,c(-3)], y=as.factor(train[,3]), importance = TRUE, ntree = 2000)
+model8
+varImpPlot(model8)
+```
+
+```{r include=FALSE}
+## Build Random Forest model with top 5 predictors in MeanDecreaseGini     
+## Top5 in MeanDecreaseGini: Age, MonthlyIncome, JobRole, OverTime, YearsAtCompany   
+
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.factor(EmployeeDF$Age)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+model9 <- randomForest(x=train[,c(2,20,17,24,33)], y=as.factor(train[,3]), importance = TRUE, ntree = 2000)
+model9
+varImpPlot(model9)
+```
+
+
+```{r include=FALSE}
+## Build Random Forest model10 with Top5 from MeanDecreaseAccuracy   
+## Top5 in MeanDecreaseAccuracy: OverTime, JobInvolvement, StockOptionLevel, MonthlyIncome, TotalWorkingYears    
+
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.factor(EmployeeDF$Age)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+model9 <- randomForest(x=train[,c(24,15,29,20,30)], y=as.factor(train[,3]), importance = TRUE, ntree = 2000)
+model9
+varImpPlot(model9)
+```
+
+## Build Random Forest Model   
+## over-sampling data set    
+```{r echo=FALSE}
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.numeric(EmployeeDF$Age)
+
+# EmployeeDF1 <- EmployeeDF %>% mutate(positive = as.numeric(DailyRate)*HourlyRate*MonthlyIncome*PercentSalaryHike*
+#                                        (StockOptionLevel+1)*EnvironmentSatisfaction*JobSatisfaction*RelationshipSatisfaction)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+table(train$Attrition) # No: 533, Yes: 99
+prop.table(table(train$Attrition)) # No: 85%, Yes: 15%
+library(ROSE)
+over <- ovun.sample(Attrition~., data = train, method = "over", N= 1106)$data # 1374=687*2, 1106=553*2
+table(over$Attrition)
+
+# Build model10 with balanced over data set
+# c(2,16,24,29)
+# c(17,20,24,29,30,34,35)
+# model10 <- randomForest(x=over[,c(2,16,24,29)], y=as.factor(over[,3]), importance = TRUE, ntree = 2000)
+# model10 <- randomForest(x=over[,c(17,20,24,29,30,34,35)], y=as.factor(over[,3]), importance = TRUE, ntree = 2000)
+# model10 <- randomForest(x=over[,c(-3)], y=as.factor(over[,3]), importance = TRUE, ntree = 2000)
+model10 <- randomForest(x=over[,c(2,4,16,24,29)], y=as.factor(over[,3]), importance = TRUE, ntree = 2000)
+
+model10
+varImpPlot(model10)
+# CM10 = confusionMatrix(table(predict(model10, test[,c(2,16,24,29)]), test[,3])) # Sensitivity 0.723, Specificity 0.609
+# Sensitivity 0.723, Specificity 0.658
+# CM10 = confusionMatrix(table(predict(model10, test[,c(17,20,24,29,30,34,35)]), test[,3])) # Sensitivity 0.853, Specificity 0.512
+# CM10 = confusionMatrix(table(predict(model10, test[,c(-3)]), test[,3])) # Sensitivity 0.983, Specificity 0.317
+CM10_test = confusionMatrix(table(predict(model10, test[,c(2,4,16,24,29)]), test[,3]))
+CM10_train = confusionMatrix(table(predict(model10, train[,c(2,4,16,24,29)]), train[,3]))
+CM10_EmployeeDF = confusionMatrix(table(predict(model10, EmployeeDF[,c(2,4,16,24,29)]), EmployeeDF[,3]))
+CM10_over = confusionMatrix(table(predict(model10, over[,c(2,4,16,24,29)]), over[,3]))
+CM10_test$byClass[1:2]
+CM10_train$byClass[1:2]
+CM10_EmployeeDF$byClass[1:2]
+CM10_over$byClass[1:2]
+```
+
+## Random Forest Model Summary   
+1. 75% sensitivity and 63.4% specificity achieved on test set the same time   
+2. 88% / 98% on train set   
+3. 85% / 88% on original whole set (train + test)   
+4. Both numeric and categorical variables can be used in Random Forest Model as predictors.   
+
+```{r include=FALSE}
+## Build Random Forest Model   
+## under-sampling data set
+
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.factor(EmployeeDF$Age)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+table(train$Attrition) # No: 687, Yes: 131
+prop.table(table(train$Attrition)) # No: 84%, Yes: 16%
+library(ROSE)
+under <- ovun.sample(Attrition~., data = train, method = "under", N= 262)$data
+table(under$Attrition)
+
+# Build model11 with balanced under data set
+# c(2,16,24,29)
+# c(17,20,24,29,30,34,35)
+# model11 <- randomForest(x=under[,c(2,16,24,29)], y=as.factor(under[,3]), importance = TRUE, ntree = 2000)
+model11 <- randomForest(x=under[,c(2,4,16,24,29)], y=as.factor(under[,3]), importance = TRUE, ntree = 2000)
+# model11 <- randomForest(x=under[,c(17,20,24,29,30,34,35)], y=as.factor(under[,3]), importance = TRUE, ntree = 2000)
+# model11 <- randomForest(x=under[,c(-3)], y=as.factor(under[,3]), importance = TRUE, ntree = 2000)
+
+model11
+varImpPlot(model11)
+# CM11 = confusionMatrix(table(predict(model11, test[,c(2,16,24,29)]), test[,3])) # Sensitivity 0.638, Specificity 0.658
+CM11 = confusionMatrix(table(predict(model11, test[,c(2,4,16,24,29)]), test[,3])) # Sensitivity 0.661, Specificity 0.634
+# CM11 = confusionMatrix(table(predict(model11, test[,c(17,20,24,29,30,34,35)]), test[,3])) # Sensitivity 0.796, Specificity 0.561
+# CM11 = confusionMatrix(table(predict(model11, test[,c(-3)]), test[,3])) # Sensitivity 0.774, Specificity 0.536
+CM11
+CM11$byClass[1:2]
+```
+
+
+```{r include=FALSE}
+## Build Random Forest Model   
+## both over- & under-sampling data set
+
+set.seed(1234)
+splitPerc = .75
+EmployeeDF$StockOptionLevel <- as.numeric(EmployeeDF$StockOptionLevel)
+EmployeeDF$Age <- as.factor(EmployeeDF$Age)
+
+trainIndices = sample(1:dim(EmployeeDF)[1],round(splitPerc * dim(EmployeeDF)[1]))
+train = EmployeeDF[trainIndices,]
+test = EmployeeDF[-trainIndices,]
+
+table(train$Attrition) # No: 687, Yes: 131
+prop.table(table(train$Attrition)) # No: 84%, Yes: 16%
+library(ROSE)
+both <- ovun.sample(Attrition~., data = train, method = "both", p = 0.5, seed = 222, N=870)$data
+table(both$Attrition)
+
+# Build model12 with balanced both data set
+# c(2,16,24,29)
+# c(17,20,24,29,30,34,35)
+# model12 <- randomForest(x=both[,c(2,16,24,29)], y=as.factor(both[,3]), importance = TRUE, ntree = 2000)
+model12 <- randomForest(x=both[,c(2,4,16,24,29)], y=as.factor(both[,3]), importance = TRUE, ntree = 2000)
+# model12 <- randomForest(x=both[,c(17,20,24,29,30,34,35)], y=as.factor(both[,3]), importance = TRUE, ntree = 2000)
+# model12 <- randomForest(x=both[,c(-3)], y=as.factor(both[,3]), importance = TRUE, ntree = 2000)
+
+model12
+varImpPlot(model12)
+# CM12 = confusionMatrix(table(predict(model12, test[,c(2,16,24,29)]), test[,3])) # Sensitivity 0.717, Specificity 0.585
+CM12 = confusionMatrix(table(predict(model12, test[,c(2,4,16,24,29)]), test[,3])) # Sensitivity 0.712, Specificity 0.609
+# CM12 = confusionMatrix(table(predict(model12, test[,c(17,20,24,29,30,34,35)]), test[,3])) # Sensitivity 0.842, Specificity 0.488
+# CM12 = confusionMatrix(table(predict(model12, test[,c(-3)]), test[,3])) # Sensitivity 0.943, Specificity 0.414
+CM12
+CM12$byClass[1:2]
+```
+
+# TASK 2: 
+Dataset: CaseStudy2CompSet No Attrition.csv   
+Provide a model that will attain at least 60% sensitivity and specificity (60 each = 120 total) for the training and the validation set, provide the labels (ordered by ID) in a csv file.   
+Model used for Task2 is the Random Forest Model   
+```{r echo=FALSE}
+noAttr <- read.csv("CaseStudy2CompSet No Attrition.csv", header = TRUE)
+noAttr_p <- data.frame(noAttr[,1:2], Attrition = rep("", nrow(noAttr)), noAttr[,3:ncol(noAttr)])
+str(noAttr_p)
+noAttr_p$Age <- as.numeric(noAttr_p$Age)
+#summary(EmployeeDF[,c(2,4,16,24,29)])
+#summary(noAttr_p[,c(2,4,16,24,29)])
+Attr_p <- predict(model10, noAttr_p[,c(2,4,16,24,29)])
+noAttr_p$Attrition <- Attr_p
+#summary(noAttr_p$Attrition)
+write.csv(noAttr_p, file = "Case2PredictionsWang Attrition.csv", quote = FALSE, row.names = FALSE)
+```
+
+# TASK 3:
+Provide a model that will attain a RMSE < $3000 for the training and the validation set, provide the predicted salaries (ordered by ID) in a csv file.
+```{r echo=FALSE}
+EmployeeDF %>% ggplot(aes(x=JobLevel, y=MonthlyIncome))+geom_point()+geom_smooth(method = lm) + ggtitle("MonthlyIncome vs JobLevel")
+EmployeeDF %>% ggplot(aes(x=TotalWorkingYears, y=MonthlyIncome))+geom_point()+geom_smooth(method = lm) + ggtitle("MonthlyIncome vs TotalWorkingYears")
+paste0("Correlation test: MonthlyIncome vs. JobLevel: ")
+cor.test(EmployeeDF$MonthlyIncome, EmployeeDF$JobLevel)
+paste0("Correlation test: MonthlyIncome vs. TotalWorkingYears: ")
+cor.test(EmployeeDF$MonthlyIncome, EmployeeDF$TotalWorkingYears)
+paste0("Linear Regression Model: ")
+fit1 <- lm(MonthlyIncome ~ JobLevel + TotalWorkingYears + JobLevel*TotalWorkingYears, EmployeeDF)
+summary(fit1)
+
+# Caculate RMSE:
+paste0("RMSE of the model: ")
+rmse(EmployeeDF$MonthlyIncome, predict(fit1, EmployeeDF))
+
+# Prediction
+noSal <- read.csv("CaseStudy2CompSet No Salary.csv", header = TRUE)
+noSal_p <- data.frame(noSal[,1:19], MonthlyIncome = rep("", nrow(noSal)), noAttr[,20:ncol(noSal)])
+noSal_p$MonthlyIncome <- predict(fit1, noSal_p)
+write.csv(noSal_p, file = "Case2PredictionsWang Salary.csv", quote = FALSE, row.names = FALSE)
+
+```
+
+# Summary   
+Employee data set has been used in this case study. Firstly I conducted the EDA analysis with tools of data visualization, boxplots, density plots and bar charts have been used to check whether there are special pattern in the variables that contribute to the attrition rate. Then I run the correlation test to check if any strong correlation exit in between the numeric variables. After that I tried to build KNN model to predict the attrition rate, and found the imblanced data resulted in high % of sensitivity and low % of specificity, over-sampling tool has been used to re-build a new data set, and Random Forest Model is selected due to the better result on balanced data, which result in a 75% sensitivity and 63.4% specificity in the end. Then this model is used to predict the attrition rate in a new data set, 31 out of the 300 observations have been predicted as leaving company employees. Finally a linear regression model has been built and be used to predict the MonthlyIncome of employees with a new test set, JobLevel and TotalWorkingYears are two explanatory variables used in this model, together with the interaction part, all the parameters passed the t-Test with p-value smaller than 0.05, Adj R-square=0.9171, RMSE is 1320.956.
